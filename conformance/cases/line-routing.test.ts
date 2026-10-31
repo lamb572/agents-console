@@ -13,6 +13,7 @@ import { conformance, type CaseServer } from "../harness/case.ts";
 import { answer, settle, statuses, ticketOf } from "../harness/pool-run.ts";
 import { readStateLine } from "../harness/pool-files.ts";
 import type { World } from "../harness/world.ts";
+import type { PlanNodeFile } from "../../protocol/wire.ts";
 import {
   FAIL,
   NO_FINDINGS,
@@ -283,4 +284,50 @@ conformance("line", "a spawn proposed from inside the Line is held for the opera
   expect(discarded.status).toBeLessThan(300);
   const atFinish = await atCheckpoint(server, "finish-1");
   expect(atFinish.line?.waitingFor).toEqual([]);
+});
+
+conformance("line", "one verdict on several edges starts every reviewer at once, and a join-all gate whose reviewers each route both their verdicts to it opens once each has handed on", async (t) => {
+  const world = lineWorld(t, null);
+  world.stubs.script("qa-1", PASS);
+  world.stubs.script("security-1", verdict({ findings: [{ severity: "must", title: "Shell injection", detail: "the todo text reaches a shell unescaped" }] }));
+  world.stubs.script("code-1", NO_FINDINGS);
+  const server = await t.start(world);
+  const reviewed = plan(
+    [
+      node.agent("implement"),
+      node.prove("qa"),
+      node.review("security"),
+      node.review("code"),
+      { ...node.gate("reviewed", "operator"), join: "all" } as PlanNodeFile,
+      node.finish(),
+    ],
+    [
+      edge("implement", "done", "qa"),
+      edge("implement", "done", "security"),
+      edge("implement", "done", "code"),
+      edge("qa", "pass", "reviewed"),
+      edge("qa", "fail", "reviewed"),
+      edge("security", "clean", "reviewed"),
+      edge("security", "findings", "reviewed"),
+      edge("code", "clean", "reviewed"),
+      edge("code", "findings", "reviewed"),
+      edge("reviewed", "open", "finish"),
+    ],
+    "Reviewed",
+  );
+  await begun(server, { plan: reviewed, work: "#1" });
+
+  const open = await atCheckpoint(server, "reviewed-1");
+  expect(statuses(open)).toEqual({
+    "implement-1": "done",
+    "qa-1": "done",
+    "security-1": "done",
+    "code-1": "done",
+    "reviewed-1": "checkpoint",
+  });
+  for (const reviewer of ["qa-1", "security-1", "code-1"]) {
+    expect(readStateLine(world.pool, `${reviewer}.md`).line).toContain(`blocked-by=implement-1 status=done node=${reviewer.slice(0, -2)}`);
+  }
+  const blockers = readStateLine(world.pool, "reviewed-1.md").line.match(/blocked-by=(\S+)/)?.[1]?.split(",").sort();
+  expect(blockers).toEqual(["code-1", "qa-1", "security-1"]);
 });
