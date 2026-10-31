@@ -52,6 +52,7 @@ import { DRAFT_TICKET_ATTR, type DraftAnswers } from "./drafts";
 import { renderStewardBadge, renderStewardNote } from "./steward";
 import { offersEndAsClosed, renderDeliveryWarning, renderNodeBadge } from "./conversations";
 import { EFFORT_NOT_APPLIED_TITLE, effortInput, effortText, effortValue } from "./effort";
+import type { HandedInView, VerdictView } from "./verdicts";
 
 // One global localStorage key (not per pool) remembers the dragged width
 // across reloads.
@@ -958,6 +959,10 @@ export class Detail {
     if (detail.resolver) {
       panel.append(this.renderResolver(detail.ticketId, detail.resolver, timeline, handlers));
     }
+    // A Gate's or the Finish's hold: what it waits on, above the answer to it.
+    if (detail.handedIn) {
+      panel.append(renderHandedIn(detail.handedIn));
+    }
     if (detail.interrupt) {
       panel.append(this.renderInterrupt(detail.interrupt, handlers, timeline));
     }
@@ -1390,6 +1395,7 @@ export class Detail {
       outcome.commitSha
         ? h("div", { class: "dim" }, `commit ${outcome.commitSha}`)
         : null,
+      detail.verdict ? renderVerdict(detail.verdict) : null,
     );
   }
 
@@ -1758,6 +1764,82 @@ function renderTimelineEntry(
             "closed without merging" + (event.closeNote ? ` · ${event.closeNote}` : ""),
           )
         : null,
+  );
+}
+
+// A Line Ticket's verdict (ADR-0040): the head names the kind and what it
+// said, and below it the substance the operator decides on.
+function renderVerdict(verdict: VerdictView): HTMLElement {
+  if (verdict.kind === "raw") {
+    return h("div", { class: "verdict" }, h("div", { class: "dim" }, "verdict"), h("pre", { class: "detail-pre verdict-raw" }, verdict.text));
+  }
+  if (verdict.kind === "prove") {
+    return h(
+      "div",
+      { class: "verdict" },
+      h("div", { class: `verdict-head verdict-${verdict.result}` }, `prove · ${verdict.result}`),
+      h("div", { class: "verdict-evidence" }, h("span", { class: "dim" }, "evidence "), verdict.evidence),
+    );
+  }
+  if (verdict.kind === "review") {
+    const n = verdict.findings.length;
+    return h(
+      "div",
+      { class: "verdict" },
+      h(
+        "div",
+        { class: `verdict-head ${n === 0 ? "verdict-clean" : "verdict-findings"}` },
+        n === 0 ? "review · clean" : `review · ${n} ${n === 1 ? "finding" : "findings"}`,
+      ),
+      ...verdict.findings.map((f) =>
+        h(
+          "div",
+          { class: "finding" },
+          h("span", { class: `finding-severity finding-${f.severity}` }, f.severity),
+          h("span", { class: "finding-title" }, f.title),
+          h("div", { class: "finding-detail" }, f.detail),
+        ),
+      ),
+    );
+  }
+  const item = (label: string, i: { title: string; reason: string }) =>
+    h(
+      "div",
+      { class: "decide-item" },
+      h("span", { class: "decide-item-label" }, label),
+      h("span", { class: "decide-item-title" }, i.title),
+      `: ${i.reason}`,
+    );
+  return h(
+    "div",
+    { class: "verdict" },
+    h("div", { class: `verdict-head verdict-${verdict.choice}` }, `decide · ${verdict.choice}`),
+    ...verdict.fixes.map((i) => item("fix", i)),
+    ...verdict.dropped.map((i) => item("drop", i)),
+  );
+}
+
+// What each Ticket a Gate's or the Finish's hold waits on handed in, so the
+// operator answering it reads the findings and evidence they decide on here.
+function renderHandedIn(rows: HandedInView[]): HTMLElement {
+  return h(
+    "div",
+    { class: "handed-in" },
+    h("div", { class: "dim" }, "handed in"),
+    ...rows.map((row) =>
+      h(
+        "div",
+        { class: "handed-in-row" },
+        h(
+          "div",
+          { class: "handed-in-line" },
+          h("span", { class: "handed-in-id" }, row.ticketId),
+          row.status === "done" ? null : h("span", { class: `handed-in-status ticket-state-${row.status}` }, row.status),
+        ),
+        row.summary ? h("div", { class: "handed-in-summary" }, row.summary) : null,
+        row.verdict ? renderVerdict(row.verdict) : null,
+      ),
+    ),
   );
 }
 

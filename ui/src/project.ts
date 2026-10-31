@@ -6,6 +6,7 @@
 
 import { Marked } from "marked";
 import type { Point, TopologyEdge } from "./geometry";
+import { handedIn, verdictView, type HandedInView, type VerdictView } from "./verdicts";
 import type {
   AssignmentSources,
   AssignmentView,
@@ -2765,6 +2766,13 @@ export interface TicketDetailView {
   /** The report a Decide pass writes, on a Decide Ticket's Detail only;
    *  null on every other Ticket. */
   report: LineReportView | null;
+  /** A Line Ticket's typed verdict as its node's kind reads it, for the
+   *  Outcome tab; null when its Outcome carried none. */
+  verdict: VerdictView | null;
+  /** On a Gate's or the Finish's hold, what each Ticket it waits on handed
+   *  in, so the operator answering it sees what they decide on; null on
+   *  every other Ticket. */
+  handedIn: HandedInView[] | null;
 }
 
 /**
@@ -2903,6 +2911,15 @@ export function projectDetail(
       stewardBudget: card.stewardBudget,
       node: card.node,
       report: reportOf(card, line),
+      verdict: verdictView(
+        line?.plan.nodes.find((n) => n.id === card.node)?.kind,
+        card.outcome?.verdict,
+      ),
+      handedIn: handedIn(
+        card,
+        cards.filter((c): c is TicketCardView => c.kind === "ticket"),
+        line?.plan ?? null,
+      ),
     };
   }
   if (card.kind === "conversation") {
