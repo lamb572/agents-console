@@ -67,6 +67,26 @@ conformance("attempts", "the harness runs under script in its pane and the wrapp
   });
 });
 
+// The pane's shell is the operator's login shell, which herdr spawns, so the
+// line the server types must parse in each of them before anything runs. fish
+// refused the old `; echo $? >` tail and the launch read as never landed.
+// Every one of these shells installed on the machine checks the line without
+// running it (`-n`); bash, which the executing fake runs it under, always does.
+conformance("attempts", "the wrapper the server types parses in every login shell, fish and zsh included", async (t) => {
+  const world = t.world({ tickets: [ticket("01", "Any shell")], config: terminalConfig() });
+  const herdr = await t.herdr(world, { rendered: READY.claude });
+  await t.start(world, { herdr });
+  await untilTicketStatus(world, "01", "done");
+
+  const text = String(sends(herdr)[0]!.params.text);
+  const shells = ["bash", "zsh", "fish"].filter((shell) => Bun.which(shell) !== null);
+  expect(shells).toContain("bash");
+  for (const shell of shells) {
+    const parsed = Bun.spawnSync([shell, "-n", "-c", text], { stderr: "pipe" });
+    expect({ shell, code: parsed.exitCode, stderr: parsed.stderr.toString() }).toEqual({ shell, code: 0, stderr: "" });
+  }
+});
+
 // attempt-run.test.ts:711 terminal-backed engine mechanics (ADR-0014)
 conformance("attempts", "the Stream file is the session's raw typescript and the log its readable lines, ANSI and carriage returns gone", async (t) => {
   const world = t.world({ tickets: [ticket("01", "Painted")], config: terminalConfig() });

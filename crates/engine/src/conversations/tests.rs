@@ -797,7 +797,7 @@ async fn a_conversation_whose_harness_is_never_found_crashes_only_after_every_tr
                 && params
                     .get("text")
                     .and_then(Value::as_str)
-                    .is_some_and(|text| text.starts_with("script -eq"));
+                    .is_some_and(|text| text.starts_with("sh -c '"));
             if wrapper {
                 std::fs::write(runs.join("conv-1.stream.jsonl"), "").unwrap();
                 std::fs::write(runs.join("conv-1.exitcode"), "127\n").unwrap();
