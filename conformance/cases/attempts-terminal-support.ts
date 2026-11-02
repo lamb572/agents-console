@@ -118,16 +118,21 @@ export const RESIZE_RELAY =
  * The wrapper the server types into Ticket `id`'s pane for `argv` (ADR-0016,
  * issue #58): the harness under the host's `script`, recording into the
  * Stream file, then its exit code echoed into the exit-code file, with no
- * `exit` after it.
+ * `exit` after it. The pane's shell is the operator's login shell, so all of
+ * it is a fixed `sh -c` script with single-quoted words after it: fish, zsh
+ * and bash read that line alike, where fish refused a bare `echo $?`.
  */
 export function wrapperFor(world: World, id: string, argv: string[]): string {
-  const stream = shellQuote(runsFile(world, `${id}.stream.jsonl`));
-  const command = argv.map(shellQuote).join(" ");
-  const record =
+  const stream = runsFile(world, `${id}.stream.jsonl`);
+  const exitcode = runsFile(world, `${id}.exitcode`);
+  const [script, words] =
     process.platform === "darwin"
-      ? `script -eqF ${stream} sh -c ${shellQuote(RESIZE_RELAY)} sh "$(tty)" ${command}`
-      : `script -eqfc ${shellQuote(command)} ${stream}`;
-  return `${record}; echo $? > ${shellQuote(runsFile(world, `${id}.exitcode`))}`;
+      ? [
+          'f=$1; e=$2; r=$3; shift 3; script -eqF "$f" sh -c "$r" sh "$(tty)" "$@"; echo $? > "$e"',
+          [stream, exitcode, RESIZE_RELAY, ...argv],
+        ]
+      : ['script -eqfc "$3" "$1"; echo $? > "$2"', [stream, exitcode, argv.map(shellQuote).join(" ")]];
+  return `sh -c ${shellQuote(script)} sh ${words.map(shellQuote).join(" ")}`;
 }
 
 /**

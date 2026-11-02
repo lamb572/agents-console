@@ -50,7 +50,7 @@ const STARTING = "starting the session\nplease wait";
 
 /** The wrapper sends the server made, one per tab it tried. */
 function wrapperSends(herdr: Parameters<typeof sends>[0]) {
-  return sends(herdr).filter((call) => typeof call.params.text === "string" && String(call.params.text).startsWith("script "));
+  return sends(herdr).filter((call) => typeof call.params.text === "string" && String(call.params.text).startsWith("sh -c '"));
 }
 
 // attempt-run.test.ts:1465 Botched launch (issue #102)

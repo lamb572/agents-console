@@ -552,7 +552,7 @@ async fn daemon(stream_path: String, landing: bool, frame: &str) -> Daemon {
                 let wrapper = params
                     .get("text")
                     .and_then(Value::as_str)
-                    .is_some_and(|text| text.starts_with("script -eq"));
+                    .is_some_and(|text| text.starts_with("sh -c '"));
                 if wrapper && landing {
                     std::fs::write(&stream_path, "").unwrap();
                 }
@@ -761,7 +761,7 @@ async fn exit_daemon(rig: &Rig, tries: Vec<WrapperRun>, frame: &str) -> Daemon {
                 let wrapper = params
                     .get("text")
                     .and_then(Value::as_str)
-                    .is_some_and(|text| text.starts_with("script -eq"));
+                    .is_some_and(|text| text.starts_with("sh -c '"));
                 if wrapper {
                     let at = sent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     match tries.get(at).copied().unwrap_or(WrapperRun::Running) {

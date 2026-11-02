@@ -189,6 +189,19 @@ pub const RESIZE_RELAY: &str = concat!(
     r#"exec "$@""#,
 );
 
+/// The wrapper's own shell on util-linux: `$1` the Stream file, `$2` the exit-code file, `$3` the
+/// quoted argv as one command string. It runs under `sh -c`, so the exit-code write is POSIX whatever
+/// shell the pane runs. No single quote and no backslash, so its one quoting is read the same by fish.
+pub const LINUX_WRAPPER_SHELL: &str = r#"script -eqfc "$3" "$1"; echo $? > "$2""#;
+
+/// The wrapper's own shell on darwin: `$1` the Stream file, `$2` the exit-code file, `$3` the
+/// [`RESIZE_RELAY`], then the argv words. `$(tty)` is read by this sh, which sits on the pane's
+/// terminal. No single quote and no backslash, for the same reason.
+pub const DARWIN_WRAPPER_SHELL: &str = concat!(
+    r#"f=$1; e=$2; r=$3; shift 3; "#,
+    r#"script -eqF "$f" sh -c "$r" sh "$(tty)" "$@"; echo $? > "$e""#,
+);
+
 /// The platform a wrapper is built for: the two `script`s disagree on how the command arrives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptPlatform {
@@ -209,32 +222,46 @@ impl ScriptPlatform {
     }
 }
 
-/// The ADR-0016 wrapper shell a pane runs, as one line of bash: the interactive argv under `script`,
-/// which allocates the PTY the TUI requires, passes the session through to the pane live, and records
-/// both directions to the Stream file. `-e` makes script's own exit status the child's, so the trailing
-/// exit-code write carries the harness's code; `-q` drops script's banners. There is no `exit`, so a
-/// ticket's pane stays open after the attempt completes. On darwin the harness runs behind the
-/// [`RESIZE_RELAY`].
+/// The ADR-0016 wrapper shell a pane runs, as one line typed into the pane's shell: the interactive
+/// argv under `script`, which allocates the PTY the TUI requires, passes the session through to the
+/// pane live, and records both directions to the Stream file. `-e` makes script's own exit status the
+/// child's, so the trailing exit-code write carries the harness's code; `-q` drops script's banners.
+/// There is no `exit`, so a ticket's pane stays open after the attempt completes. On darwin the harness
+/// runs behind the [`RESIZE_RELAY`].
+///
+/// The pane's shell is the operator's login shell, so the line is `sh -c <fixed script> sh <words>`:
+/// every word is single-quoted and the shell syntax lives in the fixed script, which sh reads. bash,
+/// zsh and fish read that line the same way, where a bare `echo $?` stopped fish from running it.
 pub fn interactive_wrapper(
     argv: &[String],
     ctx: WrapperContext<'_>,
     platform: ScriptPlatform,
 ) -> String {
-    let command = argv
+    // Terminal-backed sessions always carry a Stream path; the log path is the defensive fallback.
+    let file = ctx.stream_path.unwrap_or(ctx.log_path);
+    let mut words = vec![file.to_owned(), ctx.exit_code_path.to_owned()];
+    let script = match platform {
+        ScriptPlatform::Darwin => {
+            words.push(RESIZE_RELAY.to_owned());
+            words.extend(argv.iter().cloned());
+            DARWIN_WRAPPER_SHELL
+        }
+        ScriptPlatform::Linux => {
+            let command = argv
+                .iter()
+                .map(|arg| shell_quote(arg))
+                .collect::<Vec<_>>()
+                .join(" ");
+            words.push(command);
+            LINUX_WRAPPER_SHELL
+        }
+    };
+    let words = words
         .iter()
-        .map(|arg| shell_quote(arg))
+        .map(|word| shell_quote(word))
         .collect::<Vec<_>>()
         .join(" ");
-    // Terminal-backed sessions always carry a Stream path; the log path is the defensive fallback.
-    let file = shell_quote(ctx.stream_path.unwrap_or(ctx.log_path));
-    let record = match platform {
-        ScriptPlatform::Darwin => format!(
-            "script -eqF {file} sh -c {} sh \"$(tty)\" {command}",
-            shell_quote(RESIZE_RELAY)
-        ),
-        ScriptPlatform::Linux => format!("script -eqfc {} {file}", shell_quote(&command)),
-    };
-    format!("{record}; echo $? > {}", shell_quote(ctx.exit_code_path))
+    format!("sh -c {} sh {words}", shell_quote(script))
 }
 
 /// How the shell-settle wait ended.
@@ -1090,8 +1117,16 @@ mod tests {
     fn the_linux_wrapper_is_util_linux_scripts_c_string_form() {
         assert_eq!(
             interactive_wrapper(&argv(), wrapper_ctx(), ScriptPlatform::Linux),
-            r#"script -eqfc ''\''claude'\'' '\''--model'\'' '\''it'\''\'\'''\''s a model'\'' '\''two words'\''' '/p/runs/01.stream.jsonl'; echo $? > '/p/runs/01.exitcode'"#
+            r#"sh -c 'script -eqfc "$3" "$1"; echo $? > "$2"' sh '/p/runs/01.stream.jsonl' '/p/runs/01.exitcode' ''\''claude'\'' '\''--model'\'' '\''it'\''\'\'''\''s a model'\'' '\''two words'\'''"#
         );
+    }
+
+    #[test]
+    fn the_wrapper_scripts_quote_once_so_every_login_shell_reads_them_alike() {
+        for script in [LINUX_WRAPPER_SHELL, DARWIN_WRAPPER_SHELL, RESIZE_RELAY] {
+            assert!(!script.contains('\''), "{script}");
+            assert!(!script.contains('\\'), "{script}");
+        }
     }
 
     #[test]
@@ -1101,7 +1136,7 @@ mod tests {
         assert_eq!(
             interactive_wrapper(&argv(), wrapper_ctx(), ScriptPlatform::Darwin),
             format!(
-                r#"script -eqF '/p/runs/01.stream.jsonl' sh -c {relay} sh "$(tty)" 'claude' '--model' 'it'\''s a model' 'two words'; echo $? > '/p/runs/01.exitcode'"#
+                r#"sh -c 'f=$1; e=$2; r=$3; shift 3; script -eqF "$f" sh -c "$r" sh "$(tty)" "$@"; echo $? > "$e"' sh '/p/runs/01.stream.jsonl' '/p/runs/01.exitcode' {relay} 'claude' '--model' 'it'\''s a model' 'two words'"#
             )
         );
         assert_eq!(
@@ -1117,8 +1152,55 @@ mod tests {
             ..wrapper_ctx()
         };
         assert!(
-            interactive_wrapper(&argv(), ctx, ScriptPlatform::Linux).contains(" '/p/runs/01.log';")
+            interactive_wrapper(&argv(), ctx, ScriptPlatform::Linux)
+                .contains(" sh '/p/runs/01.log' '/p/runs/01.exitcode' ")
         );
+    }
+
+    // The pane's shell is the operator's login shell, so the line is typed into whichever one herdr
+    // spawned, and util-linux script runs its command under `$SHELL`. fish refused the old
+    // `; echo $? >` tail at parse time, so nothing ran and every launch read as never landed.
+    // util-linux script, so Linux only; every shell installed here is tried, and sh always is.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_linux_wrapper_runs_and_records_the_exit_code_under_every_installed_login_shell() {
+        let installed: Vec<String> = ["sh", "bash", "zsh", "fish"]
+            .into_iter()
+            .filter_map(|shell| {
+                let found = std::process::Command::new("sh")
+                    .args(["-c", &format!("command -v {shell}")])
+                    .output()
+                    .ok()?;
+                let path = String::from_utf8(found.stdout).ok()?;
+                (found.status.success() && !path.trim().is_empty()).then(|| path.trim().to_owned())
+            })
+            .collect();
+        assert!(installed.iter().any(|path| path.ends_with("/sh")));
+        let argv: Vec<String> = ["sh", "-c", "exit 3"].map(str::to_owned).to_vec();
+        for shell in &installed {
+            let dir = tempfile::tempdir().unwrap();
+            let stream = dir.path().join("01.stream.jsonl");
+            let exit = dir.path().join("01.exitcode");
+            let ctx = WrapperContext {
+                log_path: "/unused/01.log",
+                stream_path: Some(stream.to_str().unwrap()),
+                exit_code_path: exit.to_str().unwrap(),
+            };
+            let line = interactive_wrapper(&argv, ctx, ScriptPlatform::Linux);
+            let ran = std::process::Command::new(shell)
+                .args(["-c", &line])
+                .env("SHELL", shell)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&ran.stderr);
+            assert!(stream.exists(), "{shell}: no Stream file; {stderr}");
+            assert_eq!(
+                std::fs::read_to_string(&exit).unwrap_or_default(),
+                "3\n",
+                "{shell}: {stderr}"
+            );
+        }
     }
 
     #[test]
