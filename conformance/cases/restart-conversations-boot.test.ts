@@ -21,7 +21,7 @@ import { join } from "node:path";
 import type { LineFile } from "../../protocol/wire.ts";
 import { conformance } from "../harness/case.ts";
 import { expectSameBytes } from "../harness/equal.ts";
-import { branches } from "../harness/git-pool.ts";
+import { branches, poolWorktreesRoot } from "../harness/git-pool.ts";
 import { callsOf, CLAUDE_READY } from "../harness/herdr.ts";
 import { begun } from "./line-support.ts";
 import { poolLog, restartCase, settle, snapshotOf, startLeg, untilLogged, untilState } from "./restart-support.ts";
@@ -300,7 +300,7 @@ restartCase("a stop after a Line Conversation's End and before its merge still h
   );
   const grill = conversationIn(live, "grill-1");
   const brief = "docs/specs/main.grill-1.brief.json";
-  const tree = join(world.repo, ".git", "pool-worktrees", grill.branch!.split("/")[1]!, "grill-1");
+  const tree = join(poolWorktreesRoot(world.repo), grill.branch!.split("/")[1]!, "grill-1");
   mkdirSync(join(tree, "docs", "specs"), { recursive: true });
   writeFileSync(join(tree, "docs", "specs", "186.md"), "# Fix it\n");
   writeFileSync(join(tree, brief), JSON.stringify({ spec: "docs/specs/186.md", finish: "draft-pr" }));

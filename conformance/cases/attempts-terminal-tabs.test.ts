@@ -10,7 +10,7 @@
 import { expect } from "bun:test";
 import { join } from "node:path";
 import { conformance } from "../harness/case.ts";
-import { poolKey, ticketWorktree } from "../harness/git-pool.ts";
+import { poolKey, poolWorktreesRoot, ticketWorktree } from "../harness/git-pool.ts";
 import { awaitPrompt, spawnedPayloads, untilTicketStatus } from "../harness/herdr-tui.ts";
 import {
   interactiveArgv,
@@ -202,7 +202,7 @@ conformance("attempts", "a verify fan-out opens a tab for every Attempt, its gra
     expect(String(tab.params.label).length).toBeLessThanOrEqual(40);
     expect(tab.params.workspace_id).toBe("w1");
   }
-  const worktrees = join(world.repo, ".git", "pool-worktrees", poolKey(world.repo));
+  const worktrees = join(poolWorktreesRoot(world.repo), poolKey(world.repo));
   const builds = tabs.filter((tab) => String(tab.params.label).startsWith("01 · "));
   expect(builds.map((tab) => tab.params.label)).toEqual(["01 · Pick a winner", "01 · Pick a winner"]);
   expect(builds.map((tab) => tab.params.cwd).sort()).toEqual([

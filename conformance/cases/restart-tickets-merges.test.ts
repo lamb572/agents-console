@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnrichedSnapshot, PoolConfig } from "../../protocol/wire.ts";
 import { conformance } from "../harness/case.ts";
-import { cardOf, commitAll, gitCommonDir, gitIn, poolKey, ticketWorktree, worktreeList } from "../harness/git-pool.ts";
+import { cardOf, commitAll, gitIn, poolKey, poolWorktreesRoot, ticketWorktree, worktreeList } from "../harness/git-pool.ts";
 import { until } from "../harness/pool-files.ts";
 import type { World } from "../harness/world.ts";
 import { events } from "./formats-helpers.ts";
@@ -196,7 +196,7 @@ conformance("restart", "a merge checkout a dead server left registered is droppe
   // An enlist moved the pool checkout off the merge target, and a server
   // died with its merge checkout open on main, a file left in it.
   world.git(["checkout", "-q", "-b", "feature/x"]);
-  const stale = join(gitCommonDir(world.repo), "pool-worktrees", poolKey(world.repo), ".merge-checkout");
+  const stale = join(poolWorktreesRoot(world.repo), poolKey(world.repo), ".merge-checkout");
   mkdirSync(join(stale, ".."), { recursive: true });
   world.git(["worktree", "add", "-q", stale, "main"]);
   writeFileSync(join(stale, "half-merged.txt"), "left by a dead server\n");

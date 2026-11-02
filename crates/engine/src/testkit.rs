@@ -141,8 +141,13 @@ impl Pool {
             .prefix("engine-pool-")
             .tempdir()
             .unwrap();
-        let path = ac_core::js::canonical_dir(&dir.path().to_string_lossy());
+        // One level in: pool worktrees live beside the checkout, so the temp dir holds them too.
+        let path = format!(
+            "{}/pool",
+            ac_core::js::canonical_dir(&dir.path().to_string_lossy())
+        );
         let root = Path::new(&path);
+        std::fs::create_dir(root).unwrap();
         git(root, &["init", "-q", "-b", "main"]);
         git(root, &["config", "user.email", "t@example.com"]);
         git(root, &["config", "user.name", "t"]);

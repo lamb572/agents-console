@@ -23,6 +23,7 @@ import type {
 } from "../../protocol/wire.ts";
 import { conformance, type Case, type CaseServer } from "../harness/case.ts";
 import { until } from "../harness/pool-files.ts";
+import { poolWorktreesRoot } from "../harness/git-pool.ts";
 import type { World } from "../harness/world.ts";
 
 const CONFIG: PoolConfig = { defaults: { harness: "claude", model: "m" } };
@@ -289,7 +290,7 @@ conformance(
     writeFileSync(file, (await Bun.file(file).text()).replace("status=done", "status=ready"));
     const second = await t.start(world);
 
-    const worktree = join(world.repo, ".git", "pool-worktrees", poolKey(world.repo), "01");
+    const worktree = join(poolWorktreesRoot(world.repo), poolKey(world.repo), "01");
     const after = await until(
       async () => ({ snapshot: await snapshotOf(second), worktreeGone: !(await Bun.file(join(worktree, ".git")).exists()) }),
       ({ snapshot, worktreeGone }) =>

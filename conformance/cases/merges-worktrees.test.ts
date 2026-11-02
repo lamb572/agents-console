@@ -23,6 +23,8 @@ import {
   gitCommonDir,
   gitIn,
   gitOk,
+  poolKey,
+  poolWorktreesRoot,
   resume,
   ticketWorktree,
   untilLogged,
@@ -378,9 +380,8 @@ conformance(
     expect(inA.key).toMatch(/^[0-9a-f]{8}$/);
     expect(inB.key).toMatch(/^[0-9a-f]{8}$/);
     expect(inA.key).not.toBe(inB.key);
-    const common = gitCommonDir(world.repo);
-    expect(inA.path).toBe(join(common, "pool-worktrees", inA.key, "02"));
-    expect(inB.path).toBe(join(common, "pool-worktrees", inB.key, "02"));
+    expect(inA.path).toBe(join(poolWorktreesRoot(world.repo), inA.key, "02"));
+    expect(inB.path).toBe(join(poolWorktreesRoot(world.repo), inB.key, "02"));
     expect(listed.find((w) => w.path === inA.path)!.branch).toBe(`pool/${inA.key}/02`);
     expect(listed.find((w) => w.path === inB.path)!.branch).toBe(`pool/${inB.key}/02`);
     writeFileSync(release, "");
@@ -485,7 +486,7 @@ conformance(
     const real = realpathSync(world.repo);
     const key = createHash("sha256").update(real).digest("hex").slice(0, 8);
     expect(key).not.toBe(createHash("sha256").update(link).digest("hex").slice(0, 8));
-    const path = join(real, ".git", "pool-worktrees", key, "01");
+    const path = join(poolWorktreesRoot(world.repo), key, "01");
     const branch = `pool/${key}/01`;
     expect(worktreeList(world.repo).find((w) => w.path === path)?.branch).toBe(branch);
     const tip = gitIn(world.repo, ["rev-parse", branch]).trim();
@@ -528,5 +529,56 @@ conformance(
     );
     for (const w of wts) expect(existsSync(w.path)).toBe(false);
     expect(subjects(world.repo, "main")).toEqual(expect.arrayContaining(["work-01", "work-02"]));
+  },
+);
+
+// Vite refuses to serve any file under `**/.git/**` (its default
+// `server.fs.deny`), so a worktree inside the common git dir cannot run a
+// Vite or Vitest project's tests. Inside the checkout it would show in the
+// checkout's status and in every tool the checkout runs.
+conformance(
+  "merges",
+  "a Ticket's worktree sits beside the checkout, outside every git dir, and never shows in the checkout's status",
+  async (t) => {
+    const world = t.world({ tickets: [ready("01")], config: CONFIG });
+    const status = join(world.root, "status-during-01");
+    world.stubs.script("01", {
+      run: [record("01"), `git -C '${world.repo}' status --porcelain > '${status}'`, commit("one.txt", "work-01")].join("\n"),
+    });
+    const server = await t.start(world);
+    await untilDone(server);
+
+    const cwd = recorded(world, "01", "cwd");
+    expect(cwd).toBe(ticketWorktree(world.repo, "01").path);
+    expect(cwd.startsWith(`${poolWorktreesRoot(world.repo)}/`)).toBe(true);
+    expect(cwd.split("/")).not.toContain(".git");
+    expect(cwd.startsWith(`${realpathSync(world.repo)}/`)).toBe(false);
+    expect(readFileSync(status, "utf8")).toBe("");
+    expect(subjects(world.repo, "main")).toContain("work-01");
+  },
+);
+
+// A pool an older engine ran keeps its worktrees inside the common git dir,
+// parked work included, and git will not check one branch out twice.
+conformance(
+  "merges",
+  "a Ticket's worktree an older engine made inside the common git dir is used where it is, its parked work merged",
+  async (t) => {
+    const world = t.world({ tickets: [ready("01")], config: CONFIG });
+    const key = poolKey(world.repo);
+    const legacy = join(gitCommonDir(world.repo), "pool-worktrees", key, "01");
+    world.git(["worktree", "add", "-q", legacy, "-b", `pool/${key}/01`, "HEAD"]);
+    writeFileSync(join(legacy, "parked.txt"), "parked\n");
+    gitIn(legacy, ["add", "parked.txt"]);
+    gitIn(legacy, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "parked-01"]);
+    world.stubs.script("01", { run: [record("01"), commit("one.txt", "work-01")].join("\n") });
+    const server = await t.start(world);
+    await untilDone(server);
+
+    expect(recorded(world, "01", "cwd")).toBe(legacy);
+    expect(recorded(world, "01", "branch")).toBe(`pool/${key}/01`);
+    expect(subjects(world.repo, "main")).toEqual(expect.arrayContaining(["parked-01", "work-01"]));
+    expect(existsSync(join(world.repo, "parked.txt"))).toBe(true);
+    expect(existsSync(poolWorktreesRoot(world.repo))).toBe(false);
   },
 );

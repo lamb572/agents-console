@@ -24,10 +24,9 @@ pub struct WorktreeInfo {
     pub branch: String,
 }
 
-// Worktrees live inside the common git dir so they never appear in a checkout's status, where an
-// in-place ticket could sweep one into a commit. The common dir is the main checkout's .git for every
-// worktree of the repo; a linked worktree's own .git is a file, not a directory, so anchoring there would
-// break ticket worktree creation. Each cache is keyed by the directory as the caller spelled it and keeps
+// Worktrees are anchored on the common git dir: it is the main checkout's .git for every worktree of the
+// repo, while a linked worktree's own .git is a file, not a directory (see `pool_worktree_at` for where
+// they live). Each cache is keyed by the directory as the caller spelled it and keeps
 // whatever it first computed, the fallback included, for the life of the process.
 static COMMON_DIRS: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
 
@@ -191,23 +190,51 @@ pub fn branch_for(repo_root: impl AsRef<Path>, ticket_id: &str, attempt: Option<
     }
 }
 
-/// A Ticket's worktree: `<common git dir>/pool-worktrees/<pool key>/<id>[.attempt-N]`.
+/// A Ticket's worktree: `<pool worktrees root>/<pool key>/<id>[.attempt-N]` (see [`pool_worktree_at`]).
 pub fn worktree_path_for(
     repo_root: impl AsRef<Path>,
     ticket_id: &str,
     attempt: Option<u32>,
 ) -> String {
-    let root = repo_root.as_ref();
     let leaf = match attempt {
         None => ticket_id.to_string(),
         Some(n) => format!("{ticket_id}.attempt-{n}"),
     };
-    js::path_join(&[
-        &git_common_dir(root),
-        "pool-worktrees",
-        &pool_key_for(root),
-        &leaf,
-    ])
+    pool_worktree_at(repo_root.as_ref(), &leaf)
+}
+
+/// Where the pool keeps the worktree named `leaf`. The root is
+/// `<parent>/.<checkout name>.agent-console/pool-worktrees`, beside the main checkout: outside every
+/// git dir, because Vite refuses to serve any file under `**/.git/**` (its default `server.fs.deny`)
+/// and a worktree there could not run a Vite or Vitest project's tests; and outside the checkout, so
+/// it never shows in the checkout's status, where an in-place ticket could sweep it into a commit, and
+/// the checkout's own tools never find every worktree's copy of the project. It is anchored on the
+/// main checkout (the common git dir's parent), so every linked checkout's pool shares one root under
+/// its own key. A worktree an older engine made inside the common git dir stays where it is: git will
+/// not check its branch out a second time, and parked work may sit in it. A repository whose common dir
+/// is not a `.git` directory beside its checkout keeps the old root.
+fn pool_worktree_at(root: &Path, leaf: &str) -> String {
+    let common = git_common_dir(root);
+    let key = pool_key_for(root);
+    let legacy = js::path_join(&[&common, "pool-worktrees", &key, leaf]);
+    if Path::new(&legacy).exists() {
+        return legacy;
+    }
+    let common_path = Path::new(&common);
+    let main = common_path
+        .file_name()
+        .filter(|name| *name == ".git")
+        .and_then(|_| common_path.parent());
+    match main.and_then(|main| Some((main.parent()?, main.file_name()?))) {
+        Some((parent, name)) => js::path_join(&[
+            &js::path_text(parent),
+            &format!(".{}.agent-console", name.to_string_lossy()),
+            "pool-worktrees",
+            &key,
+            leaf,
+        ]),
+        None => legacy,
+    }
 }
 
 /// Whether `path` is a directory the engine made for an Attempt: every pool worktree lives under the
@@ -329,13 +356,7 @@ pub fn prepare_worktree(
 /// leaves at most one stale worktree, which the next open prunes and replaces. The leading dot keeps it
 /// apart from every ticket worktree beside it, since a ticket id never starts with one.
 pub fn merge_checkout_path_for(repo_root: impl AsRef<Path>) -> String {
-    let root = repo_root.as_ref();
-    js::path_join(&[
-        &git_common_dir(root),
-        "pool-worktrees",
-        &pool_key_for(root),
-        ".merge-checkout",
-    ])
+    pool_worktree_at(repo_root.as_ref(), ".merge-checkout")
 }
 
 /// Drop a merge checkout a dead engine left registered, so the merge target is not held between merges:
@@ -490,6 +511,12 @@ mod tests {
         repo.git_ok(["worktree", "list", "--porcelain"])
     }
 
+    // Where a test repo's pool worktrees go: beside its checkout, which Repo names `repo`.
+    fn beside(repo: &Repo) -> String {
+        let parent = js::path_text(repo.root().parent().unwrap());
+        format!("{parent}/.repo.agent-console/pool-worktrees")
+    }
+
     // pool namespacing (worktrees.test.ts)
 
     #[test]
@@ -511,10 +538,7 @@ mod tests {
         assert_eq!(wa.branch, format!("pool/{key_a}/02"));
         assert_eq!(wb.branch, format!("pool/{key_b}/02"));
         assert_ne!(wa.branch, wb.branch);
-        assert_eq!(
-            wa.path,
-            format!("{}/.git/pool-worktrees/{key_a}/02", a.root_text())
-        );
+        assert_eq!(wa.path, format!("{}/{key_a}/02", beside(&a)));
         assert_ne!(wb.path, wa.path);
         assert!(wb.path.contains(&format!("pool-worktrees/{key_b}")));
 
@@ -647,30 +671,80 @@ mod tests {
             branch_for(a.root(), "01", Some(3)),
             format!("pool/{key}/01.attempt-3")
         );
-        let common = format!("{}/.git", a.root_text());
+        let root = beside(&a);
         assert_eq!(
             worktree_path_for(a.root(), "01", None),
-            format!("{common}/pool-worktrees/{key}/01")
+            format!("{root}/{key}/01")
         );
         assert_eq!(
             worktree_path_for(a.root(), "01", Some(3)),
-            format!("{common}/pool-worktrees/{key}/01.attempt-3")
+            format!("{root}/{key}/01.attempt-3")
         );
         assert_eq!(
             merge_checkout_path_for(a.root()),
-            format!("{common}/pool-worktrees/{key}/.merge-checkout")
+            format!("{root}/{key}/.merge-checkout")
         );
-        // A linked checkout keeps its worktrees in the shared common dir, under its own key.
+        // A linked checkout keeps its worktrees beside the main checkout too, under its own key.
         let b = a.second_checkout();
         assert_eq!(
             worktree_path_for(b.root(), "01", None),
-            format!("{common}/pool-worktrees/{}/01", pool_key_for(b.root()))
+            format!("{root}/{}/01", pool_key_for(b.root()))
+        );
+    }
+
+    // Vite refuses to serve any file under `**/.git/**` (its default `server.fs.deny`), so a worktree
+    // inside the common git dir could not run a Vite or Vitest project's own tests. Inside the checkout
+    // instead, the checkout's own tools would sweep up every worktree's copy of the project.
+    #[test]
+    fn a_pool_worktree_lives_outside_any_git_dir_and_outside_the_checkout() {
+        let a = Repo::new();
+        let b = a.second_checkout();
+        for repo in [&a, &b] {
+            let wt = prepare_worktree(repo.root(), "01", None, "HEAD").unwrap();
+            assert!(
+                !wt.path.split('/').any(|part| part == ".git"),
+                "{}",
+                wt.path
+            );
+            assert!(!wt.path.starts_with(&a.root_text()), "{}", wt.path);
+            assert!(!wt.path.starts_with(&b.root_text()), "{}", wt.path);
+            assert!(is_pool_worktree(&wt.path));
+            assert!(Path::new(&wt.path).join("base.txt").exists());
+        }
+        assert_eq!(a.git_ok(["status", "--porcelain"]), "");
+    }
+
+    // A pool an older engine ran has its worktrees inside the common git dir, parked work included, and
+    // git will not check a branch out twice: such a worktree is used where it is, not remade.
+    #[test]
+    fn keeps_using_a_worktree_an_older_engine_made_inside_the_git_dir() {
+        let a = Repo::new();
+        let key = pool_key_for(a.root());
+        let legacy = format!("{}/.git/pool-worktrees/{key}/01", a.root_text());
+        a.git_ok([
+            "worktree",
+            "add",
+            &legacy,
+            "-b",
+            &format!("pool/{key}/01"),
+            "HEAD",
+        ]);
+        assert_eq!(worktree_path_for(a.root(), "01", None), legacy);
+        let wt = prepare_worktree(a.root(), "01", None, "HEAD").unwrap();
+        assert_eq!(wt.path, legacy);
+        // Every other Ticket goes beside the checkout.
+        assert_eq!(
+            prepare_worktree(a.root(), "02", None, "HEAD").unwrap().path,
+            format!("{}/{key}/02", beside(&a))
         );
     }
 
     #[test]
     fn tells_a_pool_worktree_by_its_path() {
         assert!(is_pool_worktree("/r/.git/pool-worktrees/abcd1234/01"));
+        assert!(is_pool_worktree(
+            "/r/.repo.agent-console/pool-worktrees/abcd1234/01"
+        ));
         assert!(is_pool_worktree("C:\\r\\.git\\pool-worktrees\\k\\01"));
         assert!(!is_pool_worktree("/r/pool-worktrees-not/01"));
         assert!(!is_pool_worktree("/home/me/project"));
@@ -745,7 +819,8 @@ mod tests {
     #[test]
     fn a_worktree_directory_that_cannot_be_made_fails_with_buns_mkdir_message() {
         let a = Repo::new();
-        let pool_worktrees = format!("{}/.git/pool-worktrees", a.root_text());
+        let pool_worktrees = beside(&a);
+        fs::create_dir_all(Path::new(&pool_worktrees).parent().unwrap()).unwrap();
         fs::write(&pool_worktrees, "a file in the way").unwrap();
         let err = prepare_worktree(a.root(), "09", None, "HEAD").unwrap_err();
         assert_eq!(

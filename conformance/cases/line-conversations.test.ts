@@ -22,6 +22,7 @@ import type { HerdrProcess } from "../harness/herdr.ts";
 import { readEvents, readStateLine, until } from "../harness/pool-files.ts";
 import { snapshot } from "../harness/pool-run.ts";
 import type { World } from "../harness/world.ts";
+import { poolWorktreesRoot } from "../harness/git-pool.ts";
 import { BODY, proposeSpawns, startConversation } from "./conversations-support.ts";
 import { atCheckpoint, begun, interruptOn, lineOf, reason } from "./line-support.ts";
 import { edge, node, plan as planOf } from "./plans-support.ts";
@@ -80,7 +81,7 @@ function end(server: CaseServer, body: Record<string, unknown>) {
 
 /** Where the server keeps a pool branch's worktree. */
 function worktreeOf(world: World, branch: string): string {
-  return join(world.repo, ".git", "pool-worktrees", branch.split("/")[1]!, branch.split("/")[2]!);
+  return join(poolWorktreesRoot(world.repo), branch.split("/")[1]!, branch.split("/")[2]!);
 }
 
 /** Play the pass: write files in its worktree and, unless told not to, commit them on its branch. */

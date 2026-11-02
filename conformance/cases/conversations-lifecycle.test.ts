@@ -23,6 +23,7 @@ import { conformance, type Case, type CaseServer } from "../harness/case.ts";
 import { expectSameBytes, expectSameFile } from "../harness/equal.ts";
 import { callsOf, type HerdrOptions, type HerdrProcess } from "../harness/herdr.ts";
 import { readEvents, readMarkers, until } from "../harness/pool-files.ts";
+import { poolWorktreesRoot } from "../harness/git-pool.ts";
 import { freePort, serverArgv, serverChoice } from "../harness/server.ts";
 import type { TicketSeed, World, WorldSpec } from "../harness/world.ts";
 import { missingHarness } from "./attempts-terminal-support.ts";
@@ -162,7 +163,7 @@ function expectPoolBranch(branch: string | null, id: string): string {
 
 /** Where the server keeps a pool branch's worktree. */
 function worktreeOf(world: World, branch: string): string {
-  return join(world.repo, ".git", "pool-worktrees", branch.split("/")[1]!, branch.split("/")[2]!);
+  return join(poolWorktreesRoot(world.repo), branch.split("/")[1]!, branch.split("/")[2]!);
 }
 
 /** What the fake's panes have had submitted (each Enter after the wrapper), in order. */
