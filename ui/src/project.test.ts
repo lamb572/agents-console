@@ -1216,7 +1216,9 @@ describe("projectDetailTabs", () => {
       hasLiveAttempt: false,
       stewardBudget: null,
       node: null,
-      report: null
+      report: null,
+      verdict: null,
+      handedIn: null
     };
   }
 

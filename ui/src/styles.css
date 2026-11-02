@@ -1552,6 +1552,106 @@ body {
   background: #fff;
 }
 
+/* A Line Ticket's verdict on its Outcome tab, and what a Gate's or the
+   Finish's hold waits on (ADR-0040): the head says what the node said, the
+   findings, evidence and Decide's items below it are what it rests on. */
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.verdict-head {
+  font-weight: 700;
+}
+
+.verdict-head.verdict-pass,
+.verdict-head.verdict-clean,
+.verdict-head.verdict-ship {
+  color: var(--status-done);
+}
+
+.verdict-head.verdict-fail,
+.verdict-head.verdict-findings,
+.verdict-head.verdict-another-round {
+  color: var(--interrupt);
+}
+
+.verdict-evidence {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.finding,
+.decide-item {
+  padding: 4px 8px;
+  border-left: 2px solid var(--border);
+}
+
+.finding-severity,
+.decide-item-label {
+  margin-right: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.finding-severity.finding-must {
+  color: var(--interrupt);
+}
+
+.finding-severity.finding-should {
+  color: var(--warning);
+}
+
+.finding-title,
+.decide-item-title {
+  font-weight: 600;
+}
+
+.finding-detail {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+.handed-in {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.handed-in-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel-2);
+}
+
+.handed-in-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.handed-in-id {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.handed-in-status {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.handed-in-summary {
+  font-size: 12px;
+}
+
 .detail-channels {
   display: flex;
   flex-direction: column;

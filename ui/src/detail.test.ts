@@ -100,6 +100,8 @@ function detailView(overrides: Partial<TicketDetailView> = {}): TicketDetailView
     stewardBudget: null,
     node: null,
     report: null,
+    verdict: null,
+    handedIn: null,
     reassign: {
       eligible: true,
       reason: null,
@@ -1613,5 +1615,143 @@ describe("Detail: the Line's report at the Finish checkpoint (#187, ADR-0037)", 
   it("shows no report section on any other Ticket", () => {
     const { root } = progress(detailView({ node: "implement", status: "in-progress" }));
     expect(root.querySelector(".detail-report")).toBeNull();
+  });
+});
+
+describe("Detail: a Line Ticket's verdict and what a hold waits on (ADR-0040)", () => {
+  function painted(detail: TicketDetailView, tab: "progress" | "outcome") {
+    const pane = new Detail({ onClose: () => {}, drafts: new DraftAnswers() });
+    const handlers: DetailHandlers = {
+      onSelectAttempt: () => {},
+      onSelectStream: () => {},
+      onLoadEarlier: () => {},
+      onAnswer: () => {},
+      onKeepTalking: () => {},
+      onUseStewardNote: () => {},
+      onSelectTab: () => {},
+      onEndConversation: () => {},
+      onFocusConversationTerminal: () => Promise.resolve(true),
+      onFocusResolver: () => Promise.resolve(true),
+      renderSpawnDecision: () => document.createElement("div"),
+      reassign: new ReassignStore({
+        onGetSettings: () => new Promise(() => {}),
+        onReassign: () => new Promise(() => {}),
+        onChange: () => {},
+      }),
+    };
+    const root = document.createElement("div");
+    commit(root, () => {
+      const shell = document.createElement("div");
+      shell.appendChild(
+        pane.render(
+          {
+            ...model(detail),
+            detailTabs: (["spec", "progress", "outcome"] as const).map((id) => ({
+              id,
+              label: id,
+              active: id === tab,
+              interruptDot: false,
+            })),
+          },
+          handlers,
+        ),
+      );
+      return shell;
+    });
+    return root;
+  }
+
+  const done = (verdict: TicketDetailView["verdict"], summary = "One finding.") =>
+    detailView({ status: "done", outcome: { status: "done", summary, commitSha: null }, verdict });
+
+  it("shows a Review's findings on Outcome, each with its severity, title and detail", () => {
+    const root = painted(
+      done({
+        kind: "review",
+        findings: [
+          { severity: "must", title: "Shell injection", detail: "the todo text reaches a shell unescaped" },
+          { severity: "nit", title: "Typo", detail: "recieve" },
+        ],
+      }),
+      "outcome",
+    );
+    expect(root.querySelector(".detail-pre")?.textContent).toBe("One finding.");
+    expect(root.querySelector(".verdict-head")?.textContent).toBe("review · 2 findings");
+    expect([...root.querySelectorAll(".finding")].map((f) => f.textContent)).toEqual([
+      "mustShell injectionthe todo text reaches a shell unescaped",
+      "nitTyporecieve",
+    ]);
+    expect(root.querySelector(".finding-severity")?.classList.contains("finding-must")).toBe(true);
+  });
+
+  it("says a Review with no findings is clean", () => {
+    const root = painted(done({ kind: "review", findings: [] }, "No findings."), "outcome");
+    expect(root.querySelector(".verdict-head")?.textContent).toBe("review · clean");
+    expect(root.querySelector(".finding")).toBeNull();
+  });
+
+  it("shows a Prove's result and where its evidence is", () => {
+    const root = painted(done({ kind: "prove", result: "fail", evidence: "runs/prove-1.evidence/run.txt" }), "outcome");
+    expect(root.querySelector(".verdict-head")?.textContent).toBe("prove · fail");
+    expect(root.querySelector(".verdict-evidence")?.textContent).toBe("evidence runs/prove-1.evidence/run.txt");
+  });
+
+  it("shows a Decide's choice, its fixes and what it dropped, each with its reason", () => {
+    const root = painted(
+      done({
+        kind: "decide",
+        choice: "another-round",
+        fixes: [{ title: "Shell injection", reason: "a must" }],
+        dropped: [{ title: "Typo", reason: "a nit" }],
+      }),
+      "outcome",
+    );
+    expect(root.querySelector(".verdict-head")?.textContent).toBe("decide · another-round");
+    expect([...root.querySelectorAll(".decide-item")].map((i) => i.textContent)).toEqual([
+      "fixShell injection: a must",
+      "dropTypo: a nit",
+    ]);
+  });
+
+  it("shows a verdict its node's kind does not read as the JSON the agent wrote", () => {
+    const root = painted(done({ kind: "raw", text: '"https://github.com/o/r/pull/1"' }), "outcome");
+    expect(root.querySelector(".verdict-raw")?.textContent).toBe('"https://github.com/o/r/pull/1"');
+  });
+
+  it("shows no verdict section when the Outcome carried none", () => {
+    const root = painted(done(null, "Added todo done."), "outcome");
+    expect(root.querySelector(".verdict")).toBeNull();
+  });
+
+  it("lists on a Gate's hold what each Ticket it waits on handed in, still running ones by status", () => {
+    const root = painted(
+      detailView({
+        ticketId: "reviewed-1",
+        status: "checkpoint",
+        node: "reviewed",
+        blockedBy: ["security-1", "code-1"],
+        handedIn: [
+          {
+            ticketId: "security-1",
+            node: "security",
+            status: "done",
+            summary: "One finding.",
+            verdict: { kind: "review", findings: [{ severity: "must", title: "Shell injection", detail: "unescaped" }] },
+          },
+          { ticketId: "code-1", node: "code", status: "in-progress", summary: null, verdict: null },
+        ],
+      }),
+      "progress",
+    );
+    const rows = [...root.querySelectorAll(".handed-in-row")];
+    expect(rows.map((r) => r.querySelector(".handed-in-id")?.textContent)).toEqual(["security-1", "code-1"]);
+    expect(rows[0]?.querySelector(".handed-in-summary")?.textContent).toBe("One finding.");
+    expect(rows[0]?.querySelector(".finding-title")?.textContent).toBe("Shell injection");
+    expect(rows[1]?.querySelector(".handed-in-status")?.textContent).toBe("in-progress");
+  });
+
+  it("shows no handed-in section on a Ticket that is not a hold", () => {
+    const root = painted(detailView({ status: "in-progress" }), "progress");
+    expect(root.querySelector(".handed-in")).toBeNull();
   });
 });
