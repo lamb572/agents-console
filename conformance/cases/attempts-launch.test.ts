@@ -14,7 +14,7 @@ import { conformance } from "../harness/case.ts";
 import { anyIsoTime, expectJsonlEqual, expectParsedEqual } from "../harness/equal.ts";
 import type { Http } from "../harness/http.ts";
 import { readEvents, readStateLine, until } from "../harness/pool-files.ts";
-import { ticketWorktree } from "../harness/git-pool.ts";
+import { poolWorktreesRoot, ticketWorktree } from "../harness/git-pool.ts";
 import type { World } from "../harness/world.ts";
 
 /** A ready Ticket `<id>-t.md` titled `T<id>`. */
@@ -95,7 +95,7 @@ function eventsEnded(world: World, id: string) {
 
 /** The one pool worktree key this world's server made. */
 function worktreeKey(world: World): string {
-  const keys = readdirSync(join(world.repo, ".git", "pool-worktrees"));
+  const keys = readdirSync(poolWorktreesRoot(world.repo));
   expect(keys).toHaveLength(1);
   return keys[0]!;
 }
@@ -117,12 +117,12 @@ conformance("attempts", "a missing, unparseable or statusless Outcome is a crash
     "03": ["outcome's status is not done or checkpoint", true],
   };
   const key = await until(
-    () => readdirSync(join(world.repo, ".git", "pool-worktrees"))[0],
+    () => readdirSync(poolWorktreesRoot(world.repo))[0],
     (found) => found !== undefined,
   );
   for (const [id, [reason, outcomeExists]] of Object.entries(reasons)) {
     await until(() => readEvents(world.pool, id), (events) => events.some((e) => e.kind === "crash"));
-    const worktree = join(world.repo, ".git", "pool-worktrees", key, id);
+    const worktree = join(poolWorktreesRoot(world.repo), key, id);
     expectJsonlEqual(readFileSync(join(world.pool, "runs", `${id}.events.jsonl`)), [
       { at: anyIsoTime(), attempt: 1, kind: "scheduled", payload: {} },
       {
@@ -234,7 +234,7 @@ function conflictWorld(t: Parameters<Parameters<typeof conformance>[2]>[0], reso
 
 /** 01's events through the resolver's spawn, in the shape both resolver cases share. */
 function resolverEvents(world: World, key: string): unknown[] {
-  const worktree = join(world.repo, ".git", "pool-worktrees", key, "01");
+  const worktree = join(poolWorktreesRoot(world.repo), key, "01");
   const facts = { cwd: worktree, env: { PWD: worktree }, harness: "claude", model: "m", pid: expect.any(Number) };
   return [
     { at: anyIsoTime(), attempt: 1, kind: "scheduled", payload: {} },
@@ -305,7 +305,7 @@ conformance("attempts", "a resolver that exits non-zero is named as the crash's 
     { ms: 30_000, what: "the merge-conflict Interrupt" },
   );
   const key = worktreeKey(world);
-  const worktree = join(world.repo, ".git", "pool-worktrees", key, "01");
+  const worktree = join(poolWorktreesRoot(world.repo), key, "01");
   expectParsedEqual(state.state.interrupts, [
     {
       ticketId: "01",

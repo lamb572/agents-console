@@ -27,10 +27,12 @@ impl Repo {
         repo
     }
 
-    /// An empty temp directory, no repository in it.
+    /// An empty directory, no repository in it, one level inside a temp directory: pool worktrees live
+    /// beside the main checkout, so the temp directory holds them too and drops them with the repo.
     pub(crate) fn bare_dir() -> Repo {
         let dir = tempfile::Builder::new().prefix("wt-").tempdir().unwrap();
-        let root = fs::canonicalize(dir.path()).unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap().join("repo");
+        fs::create_dir(&root).unwrap();
         Repo { _dir: dir, root }
     }
 

@@ -7,14 +7,15 @@
  * worktree-key gap): the first eight hex characters of the sha256 of the
  * checkout root's real path, the directory `git rev-parse --show-toplevel`
  * names for the pool. Ticket 01's worktree is
- * `<git common dir>/pool-worktrees/<key>/01`, on branch `pool/<key>/01`.
+ * `<parent>/.<checkout name>.agent-console/pool-worktrees/<key>/01`, beside
+ * the main checkout and outside every git dir, on branch `pool/<key>/01`.
  * Both servers must compute the same key, or a pool run on one and resumed
  * on the other loses its worktrees.
  */
 
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { EnrichedSnapshot, EnrichedTicketState } from "../../protocol/wire.ts";
 import type { CaseServer } from "./case.ts";
 import { until } from "./pool-files.ts";
@@ -44,10 +45,21 @@ export function gitCommonDir(checkout: string): string {
   return realpathSync(isAbsolute(dir) ? dir : resolve(checkout, dir));
 }
 
+/**
+ * The root every pool of this repository keeps its worktrees under, beside
+ * the main checkout (the common git dir's parent):
+ * `<parent>/.<checkout name>.agent-console/pool-worktrees`. Each pool's own
+ * directory in it is its key.
+ */
+export function poolWorktreesRoot(checkout: string): string {
+  const main = dirname(gitCommonDir(checkout));
+  return join(dirname(main), `.${basename(main)}.agent-console`, "pool-worktrees");
+}
+
 /** Where a pool keeps Ticket `id`'s worktree, and the branch on it. */
 export function ticketWorktree(checkout: string, id: string): { path: string; branch: string; key: string } {
   const key = poolKey(checkout);
-  return { path: join(gitCommonDir(checkout), "pool-worktrees", key, id), branch: `pool/${key}/${id}`, key };
+  return { path: join(poolWorktreesRoot(checkout), key, id), branch: `pool/${key}/${id}`, key };
 }
 
 /** One entry of `git worktree list --porcelain`. */

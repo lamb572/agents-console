@@ -16,6 +16,7 @@ import type { TicketEvent } from "../../protocol/wire.ts";
 import { conformance, type Case, type CaseServer } from "../harness/case.ts";
 import { expectSameBytes } from "../harness/equal.ts";
 import type { HerdrCall, HerdrProcess } from "../harness/herdr.ts";
+import { poolWorktreesRoot } from "../harness/git-pool.ts";
 import { readEvents, readStateLine, readTicketFile, until } from "../harness/pool-files.ts";
 import { batchPromptArg, ticketPrompt, typedPrompt, type HarnessName } from "../harness/prompts.ts";
 import type { World } from "../harness/world.ts";
@@ -230,7 +231,7 @@ conformance("attempts", "a headless launch runs each harness's batch argv, effor
     expect(call.argv.join(" ")).not.toContain("deepseek");
     // stdin closed, and PWD the attempt's own working directory.
     expect(readFileSync(join(world.root, `stdin-${m.id}`), "utf8")).toBe("eof");
-    const worktree = join(world.repo, ".git", "pool-worktrees", key, m.id);
+    const worktree = join(poolWorktreesRoot(world.repo), key, m.id);
     expect(call.cwd).toBe(worktree);
     expect(call.env.PWD).toBe(worktree);
 
@@ -304,7 +305,7 @@ conformance("attempts", "a terminal-backed launch runs each harness's interactiv
     what: "every launch recorded",
   });
   for (const m of MATRIX) {
-    const worktree = join(world.repo, ".git", "pool-worktrees", key, m.id);
+    const worktree = join(poolWorktreesRoot(world.repo), key, m.id);
     const call = calls.find((c) => c.cwd === worktree)!;
     // The TUI argv: no -p, run or --output-format, the auto-approve flags
     // kept, effort only on claude's.
@@ -589,7 +590,7 @@ conformance("attempts", "an attempt records its spawn facts against the commit i
 
   expect(world.git(["rev-parse", "HEAD"]).trim()).not.toBe(head);
   const issue = join(world.pool, "issues", "01-t.md");
-  const worktree = join(world.repo, ".git", "pool-worktrees", poolKey(world.repo), "01");
+  const worktree = join(poolWorktreesRoot(world.repo), poolKey(world.repo), "01");
   expect(eventsOf(world, "01", "spawned")[0]!.payload).toEqual({
     argv: ["claude", ...batchArgs("claude", "m", undefined, batchPromptArg("claude", "implement", issue, "<prompt>"))],
     cwd: worktree,
@@ -629,7 +630,7 @@ conformance("attempts", "a pool outside git records its own directory, a null br
 // spawn.test.ts:399
 conformance("attempts", "a spawn env equal to the server's own records no env delta", async (t) => {
   const world = t.world({ tickets: [ready("01")], config: { defaults: { harness: "claude", model: "m" } } });
-  const worktree = join(world.repo, ".git", "pool-worktrees", poolKey(world.repo), "01");
+  const worktree = join(poolWorktreesRoot(world.repo), poolKey(world.repo), "01");
   await t.start(world, { env: { PWD: worktree } });
   await until(() => readStateLine(world.pool, "01-t.md"), (m) => m.status === "done", { what: "01 done" });
   const spawned = eventsOf(world, "01", "spawned")[0]!;
@@ -661,7 +662,7 @@ conformance("attempts", "each worktree attempt gets PWD set to its own worktree,
   }
   const key = poolKey(world.repo);
   for (const id of ["01", "02"]) {
-    expect(readFileSync(join(world.root, `pwd-${id}`), "utf8")).toBe(join(world.repo, ".git", "pool-worktrees", key, id));
+    expect(readFileSync(join(world.root, `pwd-${id}`), "utf8")).toBe(join(poolWorktreesRoot(world.repo), key, id));
   }
 });
 
@@ -691,7 +692,7 @@ conformance("attempts", "verify candidates run in worktrees cut from HEAD, and t
   const key = poolKey(world.repo);
   for (const attempt of [1, 2]) {
     const spawned = eventsOf(world, "01", "spawned").find((e) => e.attempt === attempt)!;
-    const worktree = join(world.repo, ".git", "pool-worktrees", key, `01.attempt-${attempt}`);
+    const worktree = join(poolWorktreesRoot(world.repo), key, `01.attempt-${attempt}`);
     expect(spawned.payload).toMatchObject({
       cwd: worktree,
       branch: `pool/${key}/01.attempt-${attempt}`,

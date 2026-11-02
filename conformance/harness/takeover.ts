@@ -161,7 +161,7 @@ export function readableFiles(pool: string): Record<string, string> {
 
 /**
  * The pool key a checkout's worktrees and branches are named by
- * (`.git/pool-worktrees/<key>/<id>`, `pool/<key>/<id>`): the first eight hex
+ * (`.<checkout>.agent-console/pool-worktrees/<key>/<id>`, `pool/<key>/<id>`): the first eight hex
  * digits of the SHA-256 of the checkout's real path. A pool resumes on
  * another server only if that server finds the worktrees the last one
  * made, so the key is pinned here rather than read back from the server.
