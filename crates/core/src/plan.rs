@@ -284,7 +284,7 @@ pub enum Opener {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Join {
     Any,
-    /// Waits for a handoff on every incoming edge.
+    /// Waits for a handoff from every node with an edge in, along any one of its edges.
     All,
 }
 

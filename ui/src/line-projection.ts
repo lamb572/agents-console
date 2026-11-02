@@ -109,7 +109,7 @@ interface NodeFacts {
   active: number;
   /** The node has a pass in flight. */
   live: boolean;
-  /** How many edges the Plan draws into this node. */
+  /** How many nodes the Plan draws an edge from into this node, each counted once. */
   incoming: number;
   /** The hold of a spent loop leaving it. */
   loopHold: LiveCopy | null;
@@ -131,7 +131,7 @@ const STATE_RULES: readonly StateRule[] = [
   (f) => (f.hold ? { tone: "needs", text: "waiting on you" } : null),
   (f) =>
     f.plan.kind === "gate" && f.plan.join === "all" && f.view.arrived.length > 0
-      ? { tone: "collecting", text: `${f.view.arrived.length} of ${f.incoming} in` }
+      ? { tone: "collecting", text: `${new Set(f.view.arrived.map((e) => e.from)).size} of ${f.incoming} in` }
       : null,
   (f) => {
     if (!f.live && f.view.queued === 0) return null;
@@ -200,7 +200,7 @@ export function projectLine(
       hold: view.hold === undefined ? null : copyOf(join, view.hold, false),
       active: copies.filter(isActive).length,
       live: view.pass !== undefined,
-      incoming: line.plan.edges.filter((e) => e.to === plan.id).length,
+      incoming: new Set(line.plan.edges.filter((e) => e.to === plan.id).map((e) => e.from)).size,
       loopHold: spentFrom.has(plan.id) ? copyOf(join, spentFrom.get(plan.id)!, false) : null,
       lineStatus: line.status,
       waitingFor: plan.kind === "finish" ? line.waitingFor : [],

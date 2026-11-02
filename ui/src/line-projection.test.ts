@@ -132,11 +132,17 @@ describe("projectLine's node state", () => {
     expect(node.hold).toEqual({ id: "ok-1", card: "ticket:ok-1", tone: "checkpoint", selected: false });
   });
 
-  it("counts a join:all Gate's arrivals against the edges into it", () => {
+  it("counts a join:all Gate's arrivals against the nodes with an edge into it", () => {
     const node = state({
       id: "join",
       arrived: [{ from: "review", on: "clean", to: "join" }],
     });
+    expect(node.state).toEqual({ tone: "collecting", text: "1 of 2 in" });
+  });
+
+  it("counts a node that routes two verdicts into a join:all Gate once", () => {
+    const both = { ...plan, edges: [...plan.edges, { from: "review", on: "findings", to: "join" }] };
+    const node = state({ id: "join", arrived: [{ from: "review", on: "findings", to: "join" }] }, [], { plan: both });
     expect(node.state).toEqual({ tone: "collecting", text: "1 of 2 in" });
   });
 

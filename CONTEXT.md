@@ -389,7 +389,7 @@ The node after a per-item Ticket node that hands its pass on once every Copy is 
 _Avoid_: merge step, fan-in, join (a Gate joins edges; a Merger folds Copies)
 
 **Gate**:
-A node that runs no agent and waits to be opened, by the operator, by the Steward, or at once. It may wait for a handoff on every incoming edge before it opens, and the person opening it may send notes on instead.
+A node that runs no agent and waits to be opened, by the operator, by the Steward, or at once. It may wait before it opens for a handoff from every node with an edge into it; a node that routes several verdicts into the Gate counts once, along whichever edge it hands on. The person opening it may send notes on instead.
 _Avoid_: approval, checkpoint (an Attempt's pause), barrier
 
 **Hold Ticket**:

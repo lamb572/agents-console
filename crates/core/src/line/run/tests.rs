@@ -946,6 +946,62 @@ fn a_join_all_gate_waits_for_every_incoming_edge() {
     assert_eq!(after, [id("back-1"), id("front-1")]);
 }
 
+#[test]
+fn one_verdict_on_several_edges_starts_every_reviewer_at_once_and_a_join_all_gate_waits_for_them() {
+    let (mut run, mut pool) = work_run(plan(
+        json!([
+            {"kind": "agent", "id": "implement"},
+            {"kind": "prove", "id": "qa"},
+            {"kind": "review", "id": "security"},
+            {"kind": "prove", "id": "load"},
+            {"kind": "review", "id": "code"},
+            {"kind": "gate", "id": "reviewed", "open": "operator", "join": "all"},
+            {"kind": "finish", "id": "finish"}
+        ]),
+        json!([
+            {"from": "implement", "on": "done", "to": "qa"},
+            {"from": "implement", "on": "done", "to": "security"},
+            {"from": "implement", "on": "done", "to": "load"},
+            {"from": "implement", "on": "done", "to": "code"},
+            {"from": "qa", "on": "pass", "to": "reviewed"},
+            {"from": "qa", "on": "fail", "to": "reviewed"},
+            {"from": "security", "on": "clean", "to": "reviewed"},
+            {"from": "security", "on": "findings", "to": "reviewed"},
+            {"from": "load", "on": "pass", "to": "reviewed"},
+            {"from": "load", "on": "fail", "to": "reviewed"},
+            {"from": "code", "on": "clean", "to": "reviewed"},
+            {"from": "code", "on": "findings", "to": "reviewed"},
+            {"from": "reviewed", "on": "open", "to": "finish"}
+        ]),
+    ));
+    assert_eq!(written(&tick(&mut run, &mut pool)), ["implement-1"]);
+    pool.agent("implement-1");
+    let mut reviewers = written(&tick(&mut run, &mut pool));
+    reviewers.sort();
+    assert_eq!(reviewers, ["code-1", "load-1", "qa-1", "security-1"]);
+
+    pool.prove("qa-1", true);
+    pool.review(
+        "security-1",
+        json!([
+            {"severity": "must", "title": "Shell injection", "detail": "the todo text reaches a shell unescaped"}
+        ]),
+    );
+    pool.prove("load-1", false);
+    assert!(written(&tick(&mut run, &mut pool)).is_empty());
+    assert_eq!(run.view().nodes[5].arrived.len(), 3);
+
+    pool.review("code-1", json!([]));
+    let gate = tick(&mut run, &mut pool);
+    assert_eq!(written(&gate), ["reviewed-1"]);
+    let mut after = hold(&gate, "reviewed-1").blocked_by.clone();
+    after.sort();
+    assert_eq!(
+        after,
+        [id("code-1"), id("load-1"), id("qa-1"), id("security-1")]
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // Determinism and persistence
 // -------------------------------------------------------------------------------------------------

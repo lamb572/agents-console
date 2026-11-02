@@ -1315,10 +1315,18 @@ impl LineRun {
                     (Join::All, Some(via)) => {
                         let run = self.node_mut(node);
                         run.arrived.insert(via.clone(), handoff);
-                        let incoming: Vec<EdgeKey> =
-                            self.plan.incoming(node).map(|e| e.key.clone()).collect();
+                        // A node with several edges in hands on along one of them, so the Gate
+                        // waits for each node it joins, not for every edge.
+                        let sources: Vec<NodeId> = self
+                            .plan
+                            .incoming(node)
+                            .map(|e| e.key.from.clone())
+                            .collect();
                         let run = self.node_mut(node);
-                        if !incoming.iter().all(|e| run.arrived.contains_key(e)) {
+                        if !sources
+                            .iter()
+                            .all(|from| run.arrived.keys().any(|e| &e.from == from))
+                        {
                             return;
                         }
                         let mut arrivals = std::mem::take(&mut run.arrived).into_values();

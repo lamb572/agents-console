@@ -2136,7 +2136,7 @@ wire_enum! {
 }
 
 wire_enum! {
-    /// A Gate opens on a handoff from any incoming edge, or waits for all of them.
+    /// A Gate opens on a handoff from any incoming edge, or waits for one from every node with an edge in.
     pub enum PlanJoin {
         Any = "any",
         All = "all",

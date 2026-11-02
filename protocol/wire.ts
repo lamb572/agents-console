@@ -1272,7 +1272,7 @@ export type PlanConflict = "wait" | { resolver: PlanAssign };
 /** Who opens a Gate. `auto` opens it at once, with no hold. */
 export type PlanOpener = "operator" | "steward" | "auto";
 
-/** A Gate opens on a handoff from any incoming edge, or waits for all of them. */
+/** A Gate opens on a handoff from any incoming edge, or waits for one from every node with an edge in. */
 export type PlanJoin = "any" | "all";
 
 /**
